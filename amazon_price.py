@@ -138,17 +138,6 @@ if daily_report:
         body_lines.append(f"Yesterday: ${entry['yesterday_price']}")
         body_lines.append(f"All-Time Low: ${entry['lowest_price']} on {entry['lowest_price_date']}\n")
 
-        # Text alert if price dropped
-        try:
-            today_price = float(entry['today_price'])
-            yesterday_price = float(entry['yesterday_price'])
-            if today_price < yesterday_price:
-                sms_lines.append(
-                    f"{entry['name'][:30]}: ${today_price} (was ${yesterday_price})"
-                )
-        except:
-            continue  # skip if price is invalid
-
     # Send email report
     yag.send(
         to=RECIPIENTS,
@@ -156,26 +145,6 @@ if daily_report:
         contents="\n".join(body_lines)
     )
     print(f"\nEmail report sent to {RECIPIENTS}")
-
-    # Multiple SMS recipients
-    sms_recipients = [
-        "2628942374@txt.att.net"
-    ]
-
-    if sms_lines:
-        sms_body = f"Amazon Price Drop Alert ({today}):\n" + "\n".join(sms_lines)
-        for sms_email in sms_recipients:
-            try:
-                yag.send(
-                    to=sms_email,
-                    subject="",  # blank subject for SMS
-                    contents=sms_body
-                )
-                print(f"Text alert sent to {sms_email}")
-            except Exception as e:
-                print(f"Failed to send to {sms_email}: {e}")
-    else:
-        print("No price drops today, no texts sent.")
 else:
-    print("No new entries to email or text today.")
+    print("No new entries to email today.")
 
