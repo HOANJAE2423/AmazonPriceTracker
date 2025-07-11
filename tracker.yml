@@ -2,7 +2,7 @@ name: Daily Amazon Price Tracker
 
 on:
   schedule:
-    - cron: '0 15 * * *'  # UTC 15:00 = 10:00 AM CST
+    - cron: '0 17 * * *'  # UTC 17:00 = 12:00 PM CST
   workflow_dispatch:      # Allows manual triggering too
 
 jobs:
