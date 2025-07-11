@@ -2,8 +2,11 @@ name: Daily Amazon Price Tracker
 
 on:
   schedule:
-    - cron: '50 17 * * *'  # UTC 17:00 = 12:00 PM CST
-  workflow_dispatch:      # Allows manual triggering too
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run-tracker:
@@ -19,13 +22,20 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run tracker script
         env:
           EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        run: python amazon_price.py
+
+      - name: Commit updated CSV
         run: |
-          python amazon_price.py
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add amazon_price_tracking.csv
+          git commit -m "Update price data: $(date -u +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+          git push
+
