@@ -1,245 +1,177 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 17,
-   "id": "f0e3fd10",
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "\n",
-      "Scraping: https://www.amazon.com/dp/B00O5NEQP8\n",
-      "→ Bionic Men's Stablegrip 1.0 White Golf Glove... | $18.40\n",
-      "\n",
-      "Scraping: https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Pants/dp/B09YXL4Y2H\n",
-      "→ CRZ YOGA Men's All Day Comfy Golf Pants - 28\"/30\"/32\"/34\" Qu... | $38.25\n",
-      "\n",
-      "Scraping: https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Shorts/dp/B0B82HPRMT\n",
-      "→ CRZ YOGA Men's All Day Comfy Golf Shorts - 7\"/9\" Stretch Lig... | $32.30\n",
-      "\n",
-      "Email report sent to jaeger.hoang@gmail.com\n",
-      "No price drops today, no texts sent.\n"
-     ]
-    }
-   ],
-   "source": [
-    "import time\n",
-    "import csv\n",
-    "import os\n",
-    "from datetime import datetime, timedelta\n",
-    "from bs4 import BeautifulSoup\n",
-    "import undetected_chromedriver as uc\n",
-    "import yagmail\n",
-    "\n",
-    "# ----------- CONFIGURE -----------\n",
-    "SENDER_EMAIL = os.getenv("EMAIL_USERNAME")",
-    "APP_PASSWORD = os.getenv("EMAIL_PASSWORD")",
-    "RECIPIENTS = [email.strip() for email in os.getenv("EMAIL_RECIPIENTS", "").split(',')]",
-    "SUBJECT_LINE = 'Amazon Daily Price Tracker Report'\n",
-    "\n",
-    "product_urls = [\n",
-    "    'https://www.amazon.com/dp/B00O5NEQP8',\n",
-    "    'https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Pants/dp/B09YXL4Y2H',\n",
-    "    'https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Shorts/dp/B0B82HPRMT'\n",
-    "]\n",
-    "\n",
-    "csv_file = 'amazon_price_tracking.csv'\n",
-    "today = datetime.now().strftime('%Y-%m-%d')\n",
-    "yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')\n",
-    "\n",
-    "# Track existing entries\n",
-    "existing_entries = set()\n",
-    "price_history = {}\n",
-    "\n",
-    "if os.path.exists(csv_file):\n",
-    "    with open(csv_file, mode='r', encoding='utf-8') as f:\n",
-    "        reader = csv.DictReader(f)\n",
-    "        for row in reader:\n",
-    "            key = row['URL']\n",
-    "            if key not in price_history:\n",
-    "                price_history[key] = []\n",
-    "            price_history[key].append({\n",
-    "                'date': row['Date'],\n",
-    "                'price': row['Price (USD)'],\n",
-    "                'name': row['Product Name'],\n",
-    "            })\n",
-    "            existing_entries.add((row['Date'], row['URL']))\n",
-    "\n",
-    "# Setup browser\n",
-    "options = uc.ChromeOptions()\n",
-    "options.headless = True\n",
-    "driver = uc.Chrome(options=options)\n",
-    "\n",
-    "# Results for email\n",
-    "daily_report = []\n",
-    "\n",
-    "with open(csv_file, mode='a', newline='', encoding='utf-8') as file:\n",
-    "    writer = csv.writer(file)\n",
-    "    if file.tell() == 0:\n",
-    "        writer.writerow(['Date', 'Product Name', 'Price (USD)', 'URL'])\n",
-    "\n",
-    "    for url in product_urls:\n",
-    "        if (today, url) in existing_entries:\n",
-    "            print(f\"Already recorded today: {url}\")\n",
-    "            continue\n",
-    "\n",
-    "        try:\n",
-    "            print(f\"\\nScraping: {url}\")\n",
-    "            driver.get(url)\n",
-    "            time.sleep(5)\n",
-    "\n",
-    "            soup = BeautifulSoup(driver.page_source, 'html.parser')\n",
-    "\n",
-    "            title_tag = soup.select_one('#productTitle')\n",
-    "            product_name = title_tag.get_text(strip=True) if title_tag else 'N/A'\n",
-    "\n",
-    "            price_tag = soup.select_one('.a-price .a-offscreen')\n",
-    "            price_text = price_tag.get_text(strip=True).replace('$', '') if price_tag else 'N/A'\n",
-    "\n",
-    "            print(f\"→ {product_name[:60]}... | ${price_text}\")\n",
-    "            writer.writerow([today, product_name, price_text, url])\n",
-    "\n",
-    "            # Find historical data\n",
-    "            previous_price = 'N/A'\n",
-    "            lowest_price = price_text\n",
-    "            all_prices = []\n",
-    "\n",
-    "            for entry in price_history.get(url, []):\n",
-    "                try:\n",
-    "                    p = float(entry['price'])\n",
-    "                    all_prices.append(p)\n",
-    "                    if entry['date'] == yesterday:\n",
-    "                        previous_price = f\"{p:.2f}\"\n",
-    "                except ValueError:\n",
-    "                    continue\n",
-    "\n",
-    "            try:\n",
-    "                current_price_float = float(price_text)\n",
-    "                if all_prices:\n",
-    "                    lowest_price = f\"{min(all_prices + [current_price_float]):.2f}\"\n",
-    "                else:\n",
-    "                    lowest_price = f\"{current_price_float:.2f}\"\n",
-    "            except ValueError:\n",
-    "                lowest_price = 'N/A'\n",
-    "\n",
-    "            daily_report.append({\n",
-    "                'name': product_name,\n",
-    "                'url': url,\n",
-    "                'today_price': price_text,\n",
-    "                'yesterday_price': previous_price,\n",
-    "                'lowest_price': lowest_price,\n",
-    "            })\n",
-    "\n",
-    "        except Exception as e:\n",
-    "            print(f\"Error scraping {url}: {e}\")\n",
-    "            writer.writerow([today, 'ERROR', 'N/A', url])\n",
-    "            daily_report.append({\n",
-    "                'name': 'ERROR',\n",
-    "                'url': url,\n",
-    "                'today_price': 'N/A',\n",
-    "                'yesterday_price': 'N/A',\n",
-    "                'lowest_price': 'N/A',\n",
-    "            })\n",
-    "\n",
-    "driver.quit()\n",
-    "\n",
-    "# ---------------- EMAIL & TEXT REPORT ----------------\n",
-    "if daily_report:\n",
-    "    yag = yagmail.SMTP(SENDER_EMAIL, APP_PASSWORD)\n",
-    "\n",
-    "    # Build email report\n",
-    "    body_lines = [f\"Date: {today}\", \"\", \"Amazon Price Tracker Summary:\\n\"]\n",
-    "    sms_lines = []\n",
-    "\n",
-    "    for entry in daily_report:\n",
-    "        body_lines.append(f\"{entry['name']}\")\n",
-    "        body_lines.append(f\"{entry['url']}\")\n",
-    "        body_lines.append(f\"Today: ${entry['today_price']}\")\n",
-    "        body_lines.append(f\"Yesterday: ${entry['yesterday_price']}\")\n",
-    "        body_lines.append(f\"All-Time Low: ${entry['lowest_price']}\\n\")\n",
-    "\n",
-    "        # Text alert if price dropped\n",
-    "        try:\n",
-    "            today_price = float(entry['today_price'])\n",
-    "            yesterday_price = float(entry['yesterday_price'])\n",
-    "            if today_price < yesterday_price:\n",
-    "                sms_lines.append(\n",
-    "                    f\"{entry['name'][:30]}: ${today_price} (was ${yesterday_price})\"\n",
-    "                )\n",
-    "        except:\n",
-    "            continue  # skip if price is invalid\n",
-    "\n",
-    "    # Send email report\n",
-    "    yag.send(\n",
-    "        to=RECIPIENTS,\n",
-    "        subject=SUBJECT_LINE,\n",
-    "        contents=\"\\n\".join(body_lines)\n",
-    "    )\n",
-    "    print(f\"\\nEmail report sent to {RECIPIENT_EMAIL}\")\n",
-    "\n",
-    "    # Multiple SMS recipients\n",
-    "    sms_recipients = [\n",
-    "        \"2628942374@txt.att.net\"\n",
-    "    ]\n",
-    "\n",
-    "    if sms_lines:\n",
-    "        sms_body = f\"Amazon Price Drop Alert ({today}):\\n\" + \"\\n\".join(sms_lines)\n",
-    "        for sms_email in sms_recipients:\n",
-    "            try:\n",
-    "                yag.send(\n",
-    "                    to=sms_email,\n",
-    "                    subject=\"\",  # blank subject for SMS\n",
-    "                    contents=sms_body\n",
-    "                )\n",
-    "                print(f\"Text alert sent to {sms_email}\")\n",
-    "            except Exception as e:\n",
-    "                print(f\"Failed to send to {sms_email}: {e}\")\n",
-    "    else:\n",
-    "        print(\"No price drops today, no texts sent.\")\n",
-    "else:\n",
-    "    print(\"No new entries to email or text today.\")\n",
-    "\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "14796b8f",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "d6161843",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3 (ipykernel)",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.11.2"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+import time
+import csv
+import os
+from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+import undetected_chromedriver as uc
+import yagmail
+
+# ----------- CONFIGURE -----------
+SENDER_EMAIL = os.getenv("EMAIL_USERNAME")
+APP_PASSWORD = os.getenv("EMAIL_PASSWORD")
+RECIPIENTS = [email.strip() for email in os.getenv("EMAIL_RECIPIENTS", "").split(',')]
+SUBJECT_LINE = 'Amazon Daily Price Tracker Report'
+
+product_urls = [
+    'https://www.amazon.com/dp/B00O5NEQP8',
+    'https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Pants/dp/B09YXL4Y2H',
+    'https://www.amazon.com/CRZ-YOGA-All-Day-Comfort-Shorts/dp/B0B82HPRMT'
+]
+
+csv_file = 'amazon_price_tracking.csv'
+today = datetime.now().strftime('%Y-%m-%d')
+yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+
+# Track existing entries
+existing_entries = set()
+price_history = {}
+
+if os.path.exists(csv_file):
+    with open(csv_file, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            key = row['URL']
+            if key not in price_history:
+                price_history[key] = []
+            price_history[key].append({
+                'date': row['Date'],
+                'price': row['Price (USD)'],
+                'name': row['Product Name'],
+            })
+            existing_entries.add((row['Date'], row['URL']))
+
+# Setup browser
+options = uc.ChromeOptions()
+options.headless = True
+driver = uc.Chrome(options=options)
+
+# Results for email
+daily_report = []
+
+with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    if file.tell() == 0:
+        writer.writerow(['Date', 'Product Name', 'Price (USD)', 'URL'])
+
+    for url in product_urls:
+        if (today, url) in existing_entries:
+            print(f"Already recorded today: {url}")
+            continue
+
+        try:
+            print(f"\nScraping: {url}")
+            driver.get(url)
+            time.sleep(5)
+
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+            title_tag = soup.select_one('#productTitle')
+            product_name = title_tag.get_text(strip=True) if title_tag else 'N/A'
+
+            price_tag = soup.select_one('.a-price .a-offscreen')
+            price_text = price_tag.get_text(strip=True).replace('$', '') if price_tag else 'N/A'
+
+            print(f"→ {product_name[:60]}... | ${price_text}")
+            writer.writerow([today, product_name, price_text, url])
+
+            # Find historical data
+            previous_price = 'N/A'
+            lowest_price = price_text
+            all_prices = []
+
+            for entry in price_history.get(url, []):
+                try:
+                    p = float(entry['price'])
+                    all_prices.append(p)
+                    if entry['date'] == yesterday:
+                        previous_price = f"{p:.2f}"
+                except ValueError:
+                    continue
+
+            try:
+                current_price_float = float(price_text)
+                if all_prices:
+                    lowest_price = f"{min(all_prices + [current_price_float]):.2f}"
+                else:
+                    lowest_price = f"{current_price_float:.2f}"
+            except ValueError:
+                lowest_price = 'N/A'
+
+            daily_report.append({
+                'name': product_name,
+                'url': url,
+                'today_price': price_text,
+                'yesterday_price': previous_price,
+                'lowest_price': lowest_price,
+            })
+
+        except Exception as e:
+            print(f"Error scraping {url}: {e}")
+            writer.writerow([today, 'ERROR', 'N/A', url])
+            daily_report.append({
+                'name': 'ERROR',
+                'url': url,
+                'today_price': 'N/A',
+                'yesterday_price': 'N/A',
+                'lowest_price': 'N/A',
+            })
+
+driver.quit()
+
+# ---------------- EMAIL & TEXT REPORT ----------------
+if daily_report:
+    yag = yagmail.SMTP(SENDER_EMAIL, APP_PASSWORD)
+
+    # Build email report
+    body_lines = [f"Date: {today}", "", "Amazon Price Tracker Summary:\n"]
+    sms_lines = []
+
+    for entry in daily_report:
+        body_lines.append(f"{entry['name']}")
+        body_lines.append(f"{entry['url']}")
+        body_lines.append(f"Today: ${entry['today_price']}")
+        body_lines.append(f"Yesterday: ${entry['yesterday_price']}")
+        body_lines.append(f"All-Time Low: ${entry['lowest_price']}\n")
+
+        # Text alert if price dropped
+        try:
+            today_price = float(entry['today_price'])
+            yesterday_price = float(entry['yesterday_price'])
+            if today_price < yesterday_price:
+                sms_lines.append(
+                    f"{entry['name'][:30]}: ${today_price} (was ${yesterday_price})"
+                )
+        except:
+            continue  # skip if price is invalid
+
+    # Send email report
+    yag.send(
+        to=RECIPIENTS,
+        subject=SUBJECT_LINE,
+        contents="\n".join(body_lines)
+    )
+    print(f"\nEmail report sent to {RECIPIENT_EMAIL}")
+
+    # Multiple SMS recipients
+    sms_recipients = [
+        "2628942374@txt.att.net"
+    ]
+
+    if sms_lines:
+        sms_body = f"Amazon Price Drop Alert ({today}):\n" + "\n".join(sms_lines)
+        for sms_email in sms_recipients:
+            try:
+                yag.send(
+                    to=sms_email,
+                    subject="",  # blank subject for SMS
+                    contents=sms_body
+                )
+                print(f"Text alert sent to {sms_email}")
+            except Exception as e:
+                print(f"Failed to send to {sms_email}: {e}")
+    else:
+        print("No price drops today, no texts sent.")
+else:
+    print("No new entries to email or text today.")
+
+
