@@ -78,6 +78,7 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
             previous_price = 'N/A'
             lowest_price = price_text
             all_prices = []
+            lowest_price_date = today  # default to today
 
             for entry in price_history.get(url, []):
                 try:
@@ -85,6 +86,9 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
                     all_prices.append(p)
                     if entry['date'] == yesterday:
                         previous_price = f"{p:.2f}"
+                    if p < float(lowest_price):
+                        lowest_price = f"{p:.2f}"
+                        lowest_price_date = entry['date']
                 except ValueError:
                     continue
 
@@ -103,6 +107,7 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
                 'today_price': price_text,
                 'yesterday_price': previous_price,
                 'lowest_price': lowest_price,
+                'lowest_price_date': lowest_price_date
             })
 
         except Exception as e:
@@ -131,7 +136,7 @@ if daily_report:
         body_lines.append(f"{entry['url']}")
         body_lines.append(f"Today: ${entry['today_price']}")
         body_lines.append(f"Yesterday: ${entry['yesterday_price']}")
-        body_lines.append(f"All-Time Low: ${entry['lowest_price']}\n")
+        body_lines.append(f"All-Time Low: ${entry['lowest_price']} on {entry['lowest_price_date']}\n")
 
         # Text alert if price dropped
         try:
@@ -150,7 +155,7 @@ if daily_report:
         subject=SUBJECT_LINE,
         contents="\n".join(body_lines)
     )
-    print(f"\nEmail report sent to {RECIPIENT_EMAIL}")
+    print(f"\nEmail report sent to {RECIPIENTS}")
 
     # Multiple SMS recipients
     sms_recipients = [
@@ -173,5 +178,4 @@ if daily_report:
         print("No price drops today, no texts sent.")
 else:
     print("No new entries to email or text today.")
-
 
