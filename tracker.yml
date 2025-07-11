@@ -2,7 +2,7 @@ name: Daily Amazon Price Tracker
 
 on:
   schedule:
-    - cron: '0 17 * * *'  # UTC 17:00 = 12:00 PM CST
+    - cron: '0 17 5 * *'  # UTC 17:00 = 12:00 PM CST
   workflow_dispatch:      # Allows manual triggering too
 
 jobs:
@@ -28,4 +28,4 @@ jobs:
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: |
-          python amazon_price_tracker.py
+          python amazon_price.py
