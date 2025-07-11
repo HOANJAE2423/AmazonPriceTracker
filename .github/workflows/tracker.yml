@@ -3,6 +3,7 @@ name: Daily Amazon Price Tracker
 on:
   schedule:
     - cron: '0 17 * * *'
+    - cron: '0 4 * * *'
   workflow_dispatch:
 
 permissions:
