@@ -48,14 +48,46 @@ driver = uc.Chrome(options=options)
 # Results for email
 daily_report = []
 
-with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
-    writer = csv.writer(file)
-    if file.tell() == 0:
-        writer.writerow(['Date', 'Product Name', 'Price (USD)', 'URL'])
+# Load and clean existing rows
+existing_rows = []
+if os.path.exists(csv_file):
+    with open(csv_file, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        headers = reader.fieldnames
+        for row in reader:
+            # Remove same-day rows with N/A price for this product
+            if row['Date'] == today and row['URL'] in product_urls and row['Price (USD)'] == 'N/A':
+                continue
+            existing_rows.append(row)
+
+# Now write cleaned data back
+with open(csv_file, mode='w', newline='', encoding='utf-8') as f:
+    writer = csv.DictWriter(f, fieldnames=['Date', 'Product Name', 'Price (USD)', 'URL'])
+    writer.writeheader()
+    writer.writerows(existing_rows)
+
+    # Refresh today's existing entries (for logic below)
+    existing_entries = set((row['Date'], row['URL']) for row in existing_rows)
+    price_history = {}
+    for row in existing_rows:
+        key = row['URL']
+        if key not in price_history:
+            price_history[key] = []
+        price_history[key].append({
+            'date': row['Date'],
+            'price': row['Price (USD)'],
+            'name': row['Product Name'],
+        })
 
     for url in product_urls:
-        if (today, url) in existing_entries:
-            print(f"Already recorded today: {url}")
+        # Skip only if valid price for today already exists
+        already_recorded = False
+        for entry in price_history.get(url, []):
+            if entry['date'] == today and entry['price'] != 'N/A':
+                already_recorded = True
+                break
+        if already_recorded:
+            print(f"Already recorded valid price today: {url}")
             continue
 
         try:
@@ -72,13 +104,18 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
             price_text = price_tag.get_text(strip=True).replace('$', '') if price_tag else 'N/A'
 
             print(f"→ {product_name[:60]}... | ${price_text}")
-            writer.writerow([today, product_name, price_text, url])
+            writer.writerow({
+                'Date': today,
+                'Product Name': product_name,
+                'Price (USD)': price_text,
+                'URL': url
+            })
 
-            # Find historical data
+            # Historical data
             previous_price = 'N/A'
             lowest_price = price_text
             all_prices = []
-            lowest_price_date = today  # default to today
+            lowest_price_date = today
 
             for entry in price_history.get(url, []):
                 try:
@@ -112,14 +149,21 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
 
         except Exception as e:
             print(f"Error scraping {url}: {e}")
-            writer.writerow([today, 'ERROR', 'N/A', url])
+            writer.writerow({
+                'Date': today,
+                'Product Name': 'ERROR',
+                'Price (USD)': 'N/A',
+                'URL': url
+            })
             daily_report.append({
                 'name': 'ERROR',
                 'url': url,
                 'today_price': 'N/A',
                 'yesterday_price': 'N/A',
                 'lowest_price': 'N/A',
+                'lowest_price_date': today
             })
+
 
 driver.quit()
 
